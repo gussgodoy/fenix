@@ -11,7 +11,6 @@ SSL_CERT_PATH = "ca.pem"
 
 # 2. FUNÇÃO DE CONEXÃO COM O BANCO DE DADOS
 def get_db_connection():
-    # ... (código de conexão existente, sem alterações)
     db_host = os.environ.get("DB_HOST")
     db_port = int(os.environ.get("DB_PORT", 3306))
     db_user = os.environ.get("DB_USER")
@@ -36,7 +35,6 @@ def index():
 
 @app.route('/api/health', methods=['GET'])
 def server_health_check():
-    # ... (código da rota de saúde existente, sem alterações)
     conn = None
     db_status = ""
     try:
@@ -49,11 +47,11 @@ def server_health_check():
             conn.close()
     return jsonify({
         "server_status": "OK", 
-        "app_version": "Minimal Test", 
+        "app_version": "v1.0.1 - Chaves API", 
         "database_status": db_status
     }), 200
 
-# 4. --- NOVAS ROTAS PARA GERENCIAMENTO DE CHAVES DE API ---
+# 4. ROTAS PARA GERENCIAMENTO DE CHAVES DE API (CORRIGIDO)
 
 # [GET] Listar todas as chaves
 @app.route('/api/chaves', methods=['GET'])
@@ -61,7 +59,7 @@ def get_chaves():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, chave, nivel_acesso, ativa, DATE_FORMAT(data_criacao, '%%d/%%m/%%Y %%H:%%i') as data_criacao FROM chaves_api")
+            cursor.execute("SELECT id, nome, chave, nivel_acesso, ativa, DATE_FORMAT(data_criacao, '%%d/%%m/%%Y %%H:%%i') as data_criacao FROM chaves_api ORDER BY id DESC")
             chaves = cursor.fetchall()
             return jsonify(chaves)
     except Exception as e:
@@ -74,25 +72,27 @@ def get_chaves():
 def create_chave():
     data = request.get_json()
     nome = data.get('nome')
-    nivel_acesso = data.get('nivel_acesso', 1)
-    if not nome:
+    if not nome or not nome.strip():
         return jsonify({"status": "error", "message": "O campo 'nome' é obrigatório."}), 400
 
     nova_chave = f"fenix-{uuid.uuid4()}"
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO chaves_api (nome, chave, nivel_acesso) VALUES (%s, %s, %s)", (nome, nova_chave, nivel_acesso))
-        conn.commit()
-        return jsonify({"status": "success", "message": "Chave criada com sucesso!", "chave": nova_chave}), 201
+            cursor.execute("INSERT INTO chaves_api (nome, chave, nivel_acesso) VALUES (%s, %s, %s)", (nome, nova_chave, 1))
+            conn.commit()
+            # Buscar a chave recém-criada para retornar o objeto completo
+            cursor.execute("SELECT * FROM chaves_api WHERE chave = %s", (nova_chave,))
+            chave_criada = cursor.fetchone()
+        return jsonify({"status": "success", "message": "Chave criada com sucesso!", "data": chave_criada}), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         conn.close()
 
-# [PUT] Atualizar uma chave (ativar/desativar)
-@app.route('/api/chaves/<int:chave_id>', methods=['PUT'])
-def update_chave_status(chave_id):
+# [PUT] Atualizar uma chave (ativar/desativar) - CORRIGIDO
+@app.route('/api/chaves/<int:id>', methods=['PUT'])
+def update_chave_status(id):
     data = request.get_json()
     if 'ativa' not in data:
         return jsonify({"status": "error", "message": "O campo 'ativa' é obrigatório."}), 400
@@ -101,8 +101,8 @@ def update_chave_status(chave_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            rows_affected = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (ativa, chave_id))
-        conn.commit()
+            rows_affected = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (ativa, id))
+            conn.commit()
         if rows_affected == 0:
             return jsonify({"status": "error", "message": "Chave não encontrada."}), 404
         return jsonify({"status": "success", "message": "Status da chave atualizado."})
@@ -111,14 +111,14 @@ def update_chave_status(chave_id):
     finally:
         conn.close()
 
-# [DELETE] Deletar uma chave
-@app.route('/api/chaves/<int:chave_id>', methods=['DELETE'])
-def delete_chave(chave_id):
+# [DELETE] Deletar uma chave - CORRIGIDO
+@app.route('/api/chaves/<int:id>', methods=['DELETE'])
+def delete_chave(id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            rows_affected = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (chave_id,))
-        conn.commit()
+            rows_affected = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (id,))
+            conn.commit()
         if rows_affected == 0:
             return jsonify({"status": "error", "message": "Chave não encontrada."}), 404
         return jsonify({"status": "success", "message": "Chave deletada com sucesso."})
@@ -126,7 +126,6 @@ def delete_chave(chave_id):
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         conn.close()
-
 
 # Ponto de entrada para Gunicorn
 if __name__ == '__main__':
