@@ -1,45 +1,56 @@
 import os
-import mysql.connector
+import pymysql
 from flask import Flask, jsonify
-from dotenv import load_dotenv
+from flask_cors import CORS
 
-# Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
-
+# 1. CONFIGURAÇÃO BÁSICA
 app = Flask(__name__)
+CORS(app)
+SSL_CERT_PATH = "ca.pem" 
 
-# Configuração do banco de dados a partir das variáveis de ambiente
-db_config = {
-    'host': os.getenv('DB_HOST'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_NAME'),
-    'port': os.getenv('DB_PORT')
-}
-
+# 2. FUNÇÃO DE CONEXÃO COM O BANCO DE DADOS
 def get_db_connection():
-    """Cria e retorna uma conexão com o banco de dados."""
-    try:
-        conn = mysql.connector.connect(**db_config)
-        return conn
-    except mysql.connector.Error as err:
-        # Em um app real, você faria um log desse erro
-        print(f"Erro de conexão com o banco de dados: {err}")
-        return None
+    db_host = os.environ.get("DB_HOST")
+    db_port = int(os.environ.get("DB_PORT", 3306))
+    db_user = os.environ.get("DB_USER")
+    db_password = os.environ.get("DB_PASSWORD")
+    db_name = os.environ.get("DB_NAME")
 
+    return pymysql.connect(
+        host=db_host,
+        port=db_port,
+        user=db_user,
+        password=db_password,
+        database=db_name,
+        cursorclass=pymysql.cursors.DictCursor,
+        charset='utf8mb4',
+        ssl={'ca': SSL_CERT_PATH}
+    )
+
+# 3. ROTA DE TESTE PRINCIPAL
 @app.route('/')
-def home():
-    return "API no ar. Acesse /test_db para verificar a conexão com o banco de dados."
+def index():
+    return "<h1>O servidor Fênix está no ar!</h1>"
 
-@app.route('/test_db')
-def test_db_connection():
-    """Rota para testar a conexão com o banco de dados."""
-    conn = get_db_connection()
-    if conn and conn.is_connected():
-        conn.close()
-        return jsonify({"status": "success", "message": "Conexão com o banco de dados bem-sucedida!"})
-    else:
-        return jsonify({"status": "error", "message": "Falha ao conectar com o banco de dados."}), 500
+# 4. ROTA DE TESTE DE SAÚDE E CONEXÃO COM A DB
+@app.route('/api/health', methods=['GET'])
+def server_health_check():
+    conn = None
+    db_status = ""
+    try:
+        conn = get_db_connection()
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+    return jsonify({
+        "server_status": "OK", 
+        "app_version": "Minimal Test", 
+        "database_status": db_status
+    }), 200
 
+# Ponto de entrada para Gunicorn
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run()
