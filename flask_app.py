@@ -39,17 +39,17 @@ def server_health_check():
     finally:
         if conn: conn.close()
     return jsonify({
-        "server_status": "OK", "app_version": "v1.0.2 - Chaves API", "database_status": db_status
+        "server_status": "OK", "app_version": "v1.1.0 - Cards UI", "database_status": db_status
     }), 200
 
-# 4. ROTAS PARA GERENCIAMENTO DE CHAVES DE API (CORRIGIDO)
+# 4. ROTAS PARA GERENCIAMENTO DE CHAVES DE API (ROTA CORRIGIDA)
 
 @app.route('/api/chaves', methods=['GET'])
 def get_chaves():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, chave, nivel_acesso, ativa, DATE_FORMAT(data_criacao, '%%d/%%m/%%Y %%H:%%i') as data_criacao FROM chaves_api ORDER BY id DESC")
+            cursor.execute("SELECT id, nome, chave, nivel_acesso, ativa, DATE_FORMAT(data_criacao, '%%d/%%m/%%Y') as data_criacao FROM chaves_api ORDER BY id DESC")
             return jsonify(cursor.fetchall())
     finally:
         conn.close()
@@ -66,33 +66,31 @@ def create_chave():
         with conn.cursor() as cursor:
             cursor.execute("INSERT INTO chaves_api (nome, chave) VALUES (%s, %s)", (nome, nova_chave))
             conn.commit()
-            cursor.execute("SELECT id, nome, chave, ativa, DATE_FORMAT(data_criacao, '%%d/%%m/%%Y %%H:%%i') as data_criacao FROM chaves_api WHERE chave = %s", (nova_chave,))
+            cursor.execute("SELECT * FROM chaves_api WHERE chave = %s", (nova_chave,))
             return jsonify({"status": "success", "data": cursor.fetchone()}), 201
     finally:
         conn.close()
 
-@app.route('/api/chaves/<int:chave_id>', methods=['PUT'])
-def update_chave_status(chave_id):
-    data = request.get_json()
-    if 'ativa' not in data:
-        return jsonify({"status": "error", "message": "O campo 'ativa' é obrigatório."}), 400
+# ROTA CORRIGIDA PARA ACEITAR 'id' DIRETAMENTE
+@app.route('/api/chaves/<int:id>', methods=['PUT', 'DELETE'])
+def handle_chave(id):
     conn = get_db_connection()
     try:
-        with conn.cursor() as cursor:
-            rows = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (bool(data['ativa']), chave_id))
-            conn.commit()
-        return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
-    finally:
-        conn.close()
-
-@app.route('/api/chaves/<int:chave_id>', methods=['DELETE'])
-def delete_chave(chave_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            rows = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (chave_id,))
-            conn.commit()
-        return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
+        if request.method == 'PUT':
+            data = request.get_json()
+            if 'ativa' not in data:
+                return jsonify({"status": "error", "message": "O campo 'ativa' é obrigatório."}), 400
+            with conn.cursor() as cursor:
+                rows = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (bool(data['ativa']), id))
+                conn.commit()
+            return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
+        
+        if request.method == 'DELETE':
+            with conn.cursor() as cursor:
+                rows = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (id,))
+                conn.commit()
+            return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
+            
     finally:
         conn.close()
 
