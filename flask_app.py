@@ -39,10 +39,10 @@ def server_health_check():
     finally:
         if conn: conn.close()
     return jsonify({
-        "server_status": "OK", "app_version": "v1.1.0 - Cards UI", "database_status": db_status
+        "server_status": "OK", "app_version": "v1.2.0 - DB Transaction Fix", "database_status": db_status
     }), 200
 
-# 4. ROTAS PARA GERENCIAMENTO DE CHAVES DE API (ROTA CORRIGIDA)
+# 4. ROTAS PARA GERENCIAMENTO DE CHAVES DE API
 
 @app.route('/api/chaves', methods=['GET'])
 def get_chaves():
@@ -71,28 +71,41 @@ def create_chave():
     finally:
         conn.close()
 
-# ROTA CORRIGIDA PARA ACEITAR 'id' DIRETAMENTE
+# --- FUNÇÃO REESCRITA PARA PUT E DELETE ---
 @app.route('/api/chaves/<int:id>', methods=['PUT', 'DELETE'])
 def handle_chave(id):
-    conn = get_db_connection()
+    conn = None
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
         if request.method == 'PUT':
             data = request.get_json()
             if 'ativa' not in data:
                 return jsonify({"status": "error", "message": "O campo 'ativa' é obrigatório."}), 400
-            with conn.cursor() as cursor:
-                rows = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (bool(data['ativa']), id))
-                conn.commit()
-            return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
+            
+            rows_affected = cursor.execute("UPDATE chaves_api SET ativa = %s WHERE id = %s", (bool(data['ativa']), id))
+            conn.commit()
+            
+            if rows_affected > 0:
+                return jsonify({"status": "success", "message": "Status atualizado."})
+            else:
+                return jsonify({"status": "error", "message": "Chave não encontrada para atualizar."}), 404
         
         if request.method == 'DELETE':
-            with conn.cursor() as cursor:
-                rows = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (id,))
-                conn.commit()
-            return jsonify({"status": "success"}) if rows > 0 else jsonify({"status": "error", "message": "Chave não encontrada."}), 404
+            rows_affected = cursor.execute("DELETE FROM chaves_api WHERE id = %s", (id,))
+            conn.commit()
+
+            if rows_affected > 0:
+                return jsonify({"status": "success", "message": "Chave deletada."})
+            else:
+                return jsonify({"status": "error", "message": "Chave não encontrada para deletar."}), 404
             
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Erro interno: {str(e)}"}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # Ponto de entrada
 if __name__ == '__main__':
